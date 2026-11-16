@@ -247,29 +247,108 @@ def render_tab_stage3() -> None:
             kidney_activity_kbq_ml=kidney_act,
             liver_activity_kbq_ml=liver_act,
         )
-    else:
-        d1, d2, d3 = st.columns(3)
-        emission_dir = d1.text_input("Folder DICOM SPECT/PET", value="./data/patient01/SPECT")
-        ct_dir = d2.text_input("Folder DICOM CT (Opsional)", value="./data/patient01/CT")
-        mask_path = d3.text_input("File Mask VOI (.nii.gz)", value="./data/patient01/tumor_mask.nii.gz")
-        calib = st.number_input("Faktor Kalibrasi SPECT (Bq/mL per count, 0 jika BQML)", 0.0, value=0.0)
+else:
+        input_method = st.radio(
+            "Metode Input File DICOM",
+            ["Unggah File dari Browser (.dcm / .zip + .nii.gz)", "Path Direktori Server/Lokal"],
+            horizontal=True,
+        )
+
+        emission_dir = ""
+        ct_dir = ""
+        mask_path = ""
+        temp_workspace = None
+
+        if input_method == "Unggah File dari Browser (.dcm / .zip + .nii.gz)":
+            u1, u2, u3 = st.columns(3)
+            uploaded_spect = u1.file_uploader(
+                "File DICOM SPECT/PET (.dcm atau .zip)",
+                type=["dcm", "zip"],
+                accept_multiple_files=True,
+                key="up_spect",
+            )
+            uploaded_ct = u2.file_uploader(
+                "File DICOM CT - Opsional (.dcm atau .zip)",
+                type=["dcm", "zip"],
+                accept_multiple_files=True,
+                key="up_ct",
+            )
+            uploaded_mask = u3.file_uploader(
+                "File Mask VOI (.nii / .nii.gz)",
+                type=["nii", "gz"],
+                key="up_mask",
+            )
+        else:
+            d1, d2, d3 = st.columns(3)
+            emission_dir = d1.text_input("Folder DICOM SPECT/PET", value="./data/patient01/SPECT")
+            ct_dir = d2.text_input("Folder DICOM CT (Opsional)", value="./data/patient01/CT")
+            mask_path = d3.text_input("File Mask VOI (.nii.gz)", value="./data/patient01/tumor_mask.nii.gz")
+
+        calib = st.number_input("Faktor Kalibrasi SPECT (Bq/mL per count, 0 jika Units=BQML)", 0.0, value=0.0)
         engine.spect_calib_factor = calib if calib > 0 else None
 
         if not st.button("Jalankan Konvolusi VSV 3D", type="primary"):
             return
 
-        bqml_img, metadata = engine.load_quantitative_emission_series(emission_dir)
-        ct_img = None
-        if ct_dir and apply_ct_density:
-            reader = sitk.ImageSeriesReader()
-            ct_files = reader.GetGDCMSeriesFileNames(ct_dir)
-            if ct_files:
-                reader.SetFileNames(ct_files)
-                ct_img = sitk.Cast(reader.Execute(), sitk.sitkFloat32)
-        voi_dict = {"Tumor Target": sitk.ReadImage(mask_path)}
+        # Ekstrak file unggahan browser ke direktori sementara jika mode upload dipilih
+        if input_method == "Unggah File dari Browser (.dcm / .zip + .nii.gz)":
+            if not uploaded_spect or not uploaded_mask:
+                st.warning("Harap unggah minimal seri DICOM SPECT/PET dan file Mask VOI (.nii/.nii.gz) terlebih dahulu.")
+                return
 
-    resampled_bqml = engine.resample_to_vsv_grid(bqml_img)
-    resampled_ct = None
+            temp_workspace = tempfile.mkdtemp(prefix="vsv_dicom_")
+            emission_dir = os.path.join(temp_workspace, "SPECT")
+            os.makedirs(emission_dir, exist_ok=True)
+
+            for f in uploaded_spect:
+                dest = os.path.join(emission_dir, f.name)
+                with open(dest, "wb") as out_f:
+                    out_f.write(f.getbuffer())
+                if f.name.lower().endswith(".zip"):
+                    with zipfile.ZipFile(dest, "r") as zf:
+                        zf.extractall(emission_dir)
+
+            if uploaded_ct:
+                ct_dir = os.path.join(temp_workspace, "CT")
+                os.makedirs(ct_dir, exist_ok=True)
+                for f in uploaded_ct:
+                    dest = os.path.join(ct_dir, f.name)
+                    with open(dest, "wb") as out_f:
+                        out_f.write(f.getbuffer())
+                    if f.name.lower().endswith(".zip"):
+                        with zipfile.ZipFile(dest, "r") as zf:
+                            zf.extractall(ct_dir)
+
+            mask_path = os.path.join(temp_workspace, uploaded_mask.name)
+            with open(mask_path, "wb") as out_f:
+                out_f.write(uploaded_mask.getbuffer())
+
+        # Validasi path & muat data dengan penanganan error yang aman
+        if not os.path.isdir(emission_dir):
+            st.error(
+                f"Direktori SPECT/PET tidak ditemukan: `{emission_dir}`. "
+                "Jika menjalankan di Streamlit Cloud, gunakan opsi **Unggah File dari Browser** atau "
+                "pilih **Phantom Klinis Terkalibrasi (Demo 3D)**."
+            )
+            return
+
+        if not os.path.isfile(mask_path):
+            st.error(f"File Mask VOI tidak ditemukan: `{mask_path}`.")
+            return
+
+        try:
+            bqml_img, metadata = engine.load_quantitative_emission_series(emission_dir)
+            ct_img = None
+            if ct_dir and os.path.isdir(ct_dir) and apply_ct_density:
+                reader = sitk.ImageSeriesReader()
+                ct_files = reader.GetGDCMSeriesFileNames(ct_dir)
+                if ct_files:
+                    reader.SetFileNames(ct_files)
+                    ct_img = sitk.Cast(reader.Execute(), sitk.sitkFloat32)
+            voi_dict = {"Tumor Target": sitk.ReadImage(mask_path)}
+        except Exception as exc:
+            st.error(f"Gagal memproses seri DICOM/NIfTI: {exc}")
+            return
     if apply_ct_density and ct_img is not None:
         resampler = sitk.ResampleImageFilter()
         resampler.SetReferenceImage(resampled_bqml)
