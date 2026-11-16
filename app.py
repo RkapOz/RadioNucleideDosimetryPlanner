@@ -331,7 +331,17 @@ def render_tab_stage3() -> None:
                 "pilih **Phantom Klinis Terkalibrasi (Demo 3D)**."
             )
             return
+    except Exception as exc:
+            st.error(f"Gagal memproses seri DICOM/NIfTI: {exc}")
+            return
 
+    resampled_bqml = engine.resample_to_vsv_grid(bqml_img)
+    resampled_ct = None
+    if apply_ct_density and ct_img is not None:
+        resampler = sitk.ResampleImageFilter()
+        resampler.SetReferenceImage(resampled_bqml)
+        resampler.SetInterpolator(sitk.sitkLinear)
+        resampled_ct = resampler.Execute(ct_img)
         if not os.path.isfile(mask_path):
             st.error(f"File Mask VOI tidak ditemukan: `{mask_path}`.")
             return
