@@ -247,7 +247,7 @@ def render_tab_stage3() -> None:
             kidney_activity_kbq_ml=kidney_act,
             liver_activity_kbq_ml=liver_act,
         )
-else:
+    else:
         input_method = st.radio(
             "Metode Input File DICOM",
             ["Unggah File dari Browser (.dcm / .zip + .nii.gz)", "Path Direktori Server/Lokal"],
