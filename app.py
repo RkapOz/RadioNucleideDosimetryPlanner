@@ -103,7 +103,6 @@ def predict_surrogate_dosimetry(
         preds = model_bundle.predict(features)[0]
         d_tumor, d_kidney, d_marrow, d_salivary = [float(x) * rad_scale for x in preds[:4]]
     else:
-        # Surrogate analitik MIRD berbasis SUV, massa organ, dan klirens eGFR
         wt_factor = 70.0 / max(weight_kg, 35.0)
         egfr_factor = (75.0 / max(egfr, 25.0)) ** 0.35
         pve_factor = 1.0 - 0.35 * np.exp(-0.08 * tumor_vol_ml)
@@ -257,7 +256,9 @@ def render_tab_stage3() -> None:
         emission_dir = ""
         ct_dir = ""
         mask_path = ""
-        temp_workspace = None
+        uploaded_spect = None
+        uploaded_ct = None
+        uploaded_mask = None
 
         if input_method == "Unggah File dari Browser (.dcm / .zip + .nii.gz)":
             u1, u2, u3 = st.columns(3)
@@ -290,7 +291,6 @@ def render_tab_stage3() -> None:
         if not st.button("Jalankan Konvolusi VSV 3D", type="primary"):
             return
 
-        # Ekstrak file unggahan browser ke direktori sementara jika mode upload dipilih
         if input_method == "Unggah File dari Browser (.dcm / .zip + .nii.gz)":
             if not uploaded_spect or not uploaded_mask:
                 st.warning("Harap unggah minimal seri DICOM SPECT/PET dan file Mask VOI (.nii/.nii.gz) terlebih dahulu.")
@@ -323,7 +323,7 @@ def render_tab_stage3() -> None:
             with open(mask_path, "wb") as out_f:
                 out_f.write(uploaded_mask.getbuffer())
 
-# Validasi path & muat data dengan penanganan error yang aman
+        # Validasi path & muat data dengan penanganan error yang aman
         if not os.path.isdir(emission_dir):
             st.error(
                 f"Direktori SPECT/PET tidak ditemukan: `{emission_dir}`. "
@@ -350,6 +350,7 @@ def render_tab_stage3() -> None:
             st.error(f"Gagal memproses seri DICOM/NIfTI: {exc}")
             return
 
+    # Resampling ke grid VSV isotropik dan eksekusi konvolusi VSV 3D
     resampled_bqml = engine.resample_to_vsv_grid(bqml_img)
     resampled_ct = None
     if apply_ct_density and ct_img is not None:
@@ -357,6 +358,18 @@ def render_tab_stage3() -> None:
         resampler.SetReferenceImage(resampled_bqml)
         resampler.SetInterpolator(sitk.sitkLinear)
         resampled_ct = resampler.Execute(ct_img)
+
+    dose_img = engine.compute_3d_voxel_dose(
+        resampled_bqml_img=resampled_bqml,
+        effective_half_life_hours=t_eff_hours,
+        vsv_kernel_mgy_per_mbqs=kernel_3d,
+        resampled_ct_img=resampled_ct,
+    )
+
+    summary_rows = []
+    aligned_masks_np: Dict[str, np.ndarray] = {}
+    dvh_by_voi: Dict[str, Dict[str, float]] = {}
+
     for voi_name, mask_img in voi_dict.items():
         v_met = engine.extract_voi_metrics(bqml_img, mask_img, metadata, apply_pve_rc=apply_pve)
         d_met = engine.compute_dvh_metrics(dose_img, mask_img)
