@@ -537,14 +537,14 @@ def main() -> None:
             ]
         )
     
-        with tab1:
-            render_tab_stage12()
-        with tab2:
-            render_tab_stage3()
-        with tab3:
-            render_tab_stage4()
-        with tab4:
-            render_tab_stage5()
+      with tab1:
+          render_tab_stage12()
+      with tab2:
+          render_tab_stage3()
+      with tab3:
+          render_tab_stage4()
+      with tab4:
+          render_tab_stage5()
 
 
 if __name__ == "__main__":
