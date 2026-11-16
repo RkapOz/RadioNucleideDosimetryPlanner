@@ -225,7 +225,7 @@ class TheranosticsMultiAgentOrchestrator:
 #### 2. Rekomendasi Regimen Terpersonalisasi (SLSQP & Kebijakan Adaptif MDP)
 - **Jadwal Aktivitas Teroptimasi ({self.n_cycles} Siklus):** `{acts}` GBq (Total: **{nom['total_activity_gbq']} GBq**).
 - **Rekomendasi Aksi Segera Siklus 1 (MDP):** Injeksi **{mdp1['rekomendasi_aktivitas_gbq']} GBq** dengan pemantauan SPECT/CT kuantitatif pasca-infus untuk memvalidasi *tumor sink effect* ($\\kappa = {self.kappa_sink}$).
-- **Keuntungan Radiobiologis:** Proyeksi total $\\text{{BED}}_{{\\text{{tumor}}}}$ sebesar **{nom['tot_tumor_bed_gy10']} Gy₁₀** (selisih **{bed_gain:+.2f} Gy₁₀** dibandingkan protokol standar tetap $7.4\\text{{ GBq}}/\\text{siklus}$).
+- **Keuntungan Radiobiologis:** Proyeksi total $\\text{{BED}}_{{\\text{{tumor}}}}$ sebesar **{nom['tot_tumor_bed_gy10']} Gy₁₀** (selisih **{bed_gain:+.2f} Gy₁₀** dibandingkan protokol standar tetap $7.4\\text{{ GBq}}/\\text{{siklus}}$).
 
 **Rincian Proyeksi per Siklus:**
 {schedule_lines}
@@ -239,33 +239,42 @@ class TheranosticsMultiAgentOrchestrator:
 """
 
     def _synthesize_gemini_clinical_note(
-        self,
-        physics_packet: Dict,
-        audit_packet: Dict,
-        api_key: str,
-        model_name: str = "gemini-2.5-flash",
-    ) -> str:
-        """
-        Agen 3B (LLM Narrative Synthesizer via Gemini REST API tanpa library tambahan):
-        Menyusun narasi konsultasi dokter spesialis kedokteran nuklir dengan grounding ketat pada JSON fisika.
-        """
-        prompt = (
-            "Anda adalah Dokter Spesialis Kedokteran Nuklir dan Teranostik Molekuler (Sp.KN-TM). "
-            "Susun ringkasan klinis formal dalam Bahasa Indonesia untuk diskusi Multidisciplinary Tumor Board (MTB) "
-            "berdasarkan data hasil perhitungan fisika dan audit keselamatan berikut. "
-            "ATURAN KETAT: Gunakan HANYA angka yang tercantum dalam JSON di bawah ini, jangan mengarang angka baru.\n\n"
-            f"DATA FISIKA & OPTIMASI:\n{json.dumps(physics_packet, indent=2)}\n\n"
-            f"DATA AUDIT KESELAMATAN:\n{json.dumps(audit_packet, indent=2)}"
-        )
-
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-        payload = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-
-        with urllib.request.urlopen(req, timeout=25) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-
+         self,
+         physics_packet: Dict,
+         audit_packet: Dict,
+         api_key: str,
+         model_candidates: tuple = ("gemini-2.5-flash", "gemini-2.0-flash"),
+     ) -> str:
+         """
+         Agen 3B (LLM Narrative Synthesizer via Gemini REST API):
+         Menyusun narasi konsultasi dokter spesialis kedokteran nuklir dengan grounding ketat pada JSON fisika.
+         """
+         prompt = (
+             "Anda adalah Dokter Spesialis Kedokteran Nuklir dan Teranostik Molekuler (Sp.KN-TM). "
+             "Susun ringkasan klinis formal dalam Bahasa Indonesia untuk diskusi Multidisciplinary Tumor Board (MTB) "
+             "berdasarkan data hasil perhitungan fisika dan audit keselamatan berikut. "
+             "ATURAN KETAT: Gunakan HANYA angka yang tercantum dalam JSON di bawah ini, jangan mengarang angka baru.\n\n"
+             f"DATA FISIKA & OPTIMASI:\n{json.dumps(physics_packet, indent=2)}\n\n"
+             f"DATA AUDIT KESELAMATAN:\n{json.dumps(audit_packet, indent=2)}"
+         )
+    
+         payload = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
+         last_err = None
+    
+         for model_name in model_candidates:
+             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+             req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+             try:
+                 with urllib.request.urlopen(req, timeout=25) as resp:
+                     data = json.loads(resp.read().decode("utf-8"))
+                     return data["candidates"][0]["content"]["parts"][0]["text"]
+             except urllib.error.HTTPError as http_exc:
+                 err_body = http_exc.read().decode("utf-8", errors="ignore")
+                 last_err = f"HTTP {http_exc.code} ({model_name}): {err_body[:180]}"
+             except Exception as exc:
+                 last_err = str(exc)
+    
+         raise RuntimeError(last_err or "Gagal menghubungi Gemini API")
     def generate_full_report(self, gemini_api_key: Optional[str] = None) -> Dict:
         physics_packet = self.run_dosimetry_physicist_agent()
         audit_packet = self.run_safety_auditor_agent(physics_packet)
