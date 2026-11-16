@@ -25,6 +25,7 @@ import plotly.graph_objects as go
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.optimize import minimize
+from stage5_multiagent_report import render_tab_stage5
 
 from dicom_vsv_dosimetry import ClinicalDicomDosimetry
 from vsv_kernel_manager import VSVKernelManager
@@ -527,20 +528,23 @@ def main() -> None:
     init_session_state()
     render_sidebar_summary()
 
-    tab1, tab2, tab3 = st.tabs(
-        [
-            "1️⃣ Prediksi Cepat ML (Tahap 1–2)",
-            "2️⃣ Dosimetri Voxel 3D & DICOM (Tahap 3)",
-            "3️⃣ Optimasi SLSQP & MDP (Tahap 4)",
-        ]
-    )
-
-    with tab1:
-        render_tab_stage12()
-    with tab2:
-        render_tab_stage3()
-    with tab3:
-        render_tab_stage4()
+    tab1, tab2, tab3, tab4 = st.tabs(
+            [
+                "1️⃣ Prediksi Cepat ML (Tahap 1–2)",
+                "2️⃣ Dosimetri Voxel 3D & DICOM (Tahap 3)",
+                "3️⃣ Optimasi SLSQP & MDP (Tahap 4)",
+                "4️⃣ Multi-Agent & Laporan MTB (Tahap 5)",
+            ]
+        )
+    
+        with tab1:
+            render_tab_stage12()
+        with tab2:
+            render_tab_stage3()
+        with tab3:
+            render_tab_stage4()
+        with tab4:
+            render_tab_stage5()
 
 
 if __name__ == "__main__":
