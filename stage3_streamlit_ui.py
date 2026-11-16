@@ -20,8 +20,9 @@ def _create_calibrated_clinical_phantom(
     Membuat phantom anatomis 3D (64x64x48) untuk simulasi & verifikasi cepat
     ketika folder DICOM pasien eksternal belum dimuat.
     """
+
     nz, ny, nx = 48, 64, 64
-    zz, yy, xx = np.ogrid[:nz, :ny, :nx]
+    zz, yy, xx = np.mgrid[:nz, :ny, :nx]  # Menggunakan mgrid agar semua mask berdimensi penuh (48, 64, 64)
 
     # Tubuh dasar (jaringan lunak ~ +35 HU) dan tulang belakang (+650 HU)
     body_mask = ((yy - 32) / 22.0) ** 2 + ((xx - 32) / 26.0) ** 2 <= 1.0
