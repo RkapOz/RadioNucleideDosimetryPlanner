@@ -323,7 +323,7 @@ def render_tab_stage3() -> None:
             with open(mask_path, "wb") as out_f:
                 out_f.write(uploaded_mask.getbuffer())
 
-        # Validasi path & muat data dengan penanganan error yang aman
+# Validasi path & muat data dengan penanganan error yang aman
         if not os.path.isdir(emission_dir):
             st.error(
                 f"Direktori SPECT/PET tidak ditemukan: `{emission_dir}`. "
@@ -331,17 +331,7 @@ def render_tab_stage3() -> None:
                 "pilih **Phantom Klinis Terkalibrasi (Demo 3D)**."
             )
             return
-    except Exception as exc:
-            st.error(f"Gagal memproses seri DICOM/NIfTI: {exc}")
-            return
 
-    resampled_bqml = engine.resample_to_vsv_grid(bqml_img)
-    resampled_ct = None
-    if apply_ct_density and ct_img is not None:
-        resampler = sitk.ResampleImageFilter()
-        resampler.SetReferenceImage(resampled_bqml)
-        resampler.SetInterpolator(sitk.sitkLinear)
-        resampled_ct = resampler.Execute(ct_img)
         if not os.path.isfile(mask_path):
             st.error(f"File Mask VOI tidak ditemukan: `{mask_path}`.")
             return
@@ -359,23 +349,14 @@ def render_tab_stage3() -> None:
         except Exception as exc:
             st.error(f"Gagal memproses seri DICOM/NIfTI: {exc}")
             return
+
+    resampled_bqml = engine.resample_to_vsv_grid(bqml_img)
+    resampled_ct = None
     if apply_ct_density and ct_img is not None:
         resampler = sitk.ResampleImageFilter()
         resampler.SetReferenceImage(resampled_bqml)
         resampler.SetInterpolator(sitk.sitkLinear)
         resampled_ct = resampler.Execute(ct_img)
-
-    dose_img = engine.compute_3d_voxel_dose(
-        resampled_bqml_img=resampled_bqml,
-        effective_half_life_hours=t_eff_hours,
-        vsv_kernel_mgy_per_mbqs=kernel_3d,
-        resampled_ct_img=resampled_ct,
-    )
-
-    summary_rows = []
-    aligned_masks_np: Dict[str, np.ndarray] = {}
-    dvh_by_voi: Dict[str, Dict[str, float]] = {}
-
     for voi_name, mask_img in voi_dict.items():
         v_met = engine.extract_voi_metrics(bqml_img, mask_img, metadata, apply_pve_rc=apply_pve)
         d_met = engine.compute_dvh_metrics(dose_img, mask_img)
