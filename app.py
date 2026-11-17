@@ -1,5 +1,5 @@
 """
-Radionuclide Dose Planner (v2.2) — Interactive Clinical Decision Support App
+Radionuclide Dose Planner (v1.5) — Interactive Clinical Decision Support App
 100% Compliant with MIRD Pamphlet 20 & 21, ICRP 89/107/110/133, and RADAR/EANM Standards
 
 Architecture:
